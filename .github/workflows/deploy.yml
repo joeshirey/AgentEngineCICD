@@ -1,0 +1,58 @@
+name: Deploy to Vertex AI Agent Engine
+
+on:
+  workflow_dispatch:
+    inputs:
+      display_name:
+        description: 'Display name for the agent in Agent Engine'
+        required: false
+        default: ''
+
+jobs:
+  deploy:
+    name: Deploy Agent
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write  # Required for Workload Identity Federation
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Authenticate to Google Cloud using Workload Identity Federation (keyless).
+      # See SECURITY.md for setup instructions.
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve agent display name
+        id: resolve_name
+        run: |
+          # Use the workflow input if provided, otherwise fall back to the variable
+          DISPLAY_NAME="${{ github.event.inputs.display_name }}"
+          if [ -z "$DISPLAY_NAME" ]; then
+            DISPLAY_NAME="${{ vars.AGENT_DISPLAY_NAME }}"
+          fi
+          echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy agent to Agent Engine
+        run: |
+          adk deploy agent_engine \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.GCP_REGION }}" \
+            --display_name="${{ steps.resolve_name.outputs.display_name }}" \
+            my_agent
