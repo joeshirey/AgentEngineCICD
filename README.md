@@ -62,19 +62,59 @@ The ADK web UI will be available at `http://localhost:8000`.
 
 ### Automated (GitHub Actions)
 
-The `Deploy to Vertex AI Agent Engine` workflow in `.github/workflows/deploy.yml` deploys the agent to Vertex AI Agent Engine. It is triggered **manually** from the GitHub Actions tab.
+The `Deploy to Vertex AI Agent Engine` workflow (`.github/workflows/deploy.yml`) automatically deploys the agent when a **pull request is merged**. The target environment is resolved from the PR's base branch:
 
-**Before running the workflow**, you must complete the one-time setup described in [SECURITY.md](SECURITY.md) (Workload Identity Federation) and configure the following GitHub secrets and variables:
+| Base branch | GitHub Environment | GCP target |
+|-------------|-------------------|------------|
+| `main` | `PROD` | Production project/region |
+| `dev/**` | `DEV` | Development project/region |
+
+The workflow is ignored for all other branches.
+
+#### How It Works
+
+1. A PR is opened targeting `main` or a `dev/*` branch
+2. When the PR is **merged** (not just closed), the workflow triggers
+3. The `resolve-environment` job maps the base branch to a GitHub Environment
+4. The `deploy` job runs within that environment, pulling its own secrets and variables
+5. `adk deploy agent_engine` packages and deploys the agent to the correct GCP project
+
+#### GitHub Environments Setup
+
+Secrets and variables are scoped **per environment** using [GitHub Environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment). Go to **Settings → Environments** and create one environment per deployment target (e.g. `PROD`, `DEV`).
+
+Each environment needs the following secrets and variables:
 
 | Type | Name | Description |
 |------|------|-------------|
-| Secret | `GCP_WORKLOAD_IDENTITY_PROVIDER` | WIF provider resource name |
-| Secret | `GCP_SERVICE_ACCOUNT` | Service account email |
-| Variable | `GCP_PROJECT_ID` | GCP project ID |
+| Secret | `GCP_WORKLOAD_IDENTITY_PROVIDER` | WIF provider resource name for this environment's GCP project |
+| Secret | `GCP_SERVICE_ACCOUNT` | Service account email for this environment |
+| Variable | `GCP_PROJECT_ID` | GCP project ID for this environment |
 | Variable | `GCP_REGION` | Deployment region (e.g. `us-central1`) |
 | Variable | `AGENT_DISPLAY_NAME` | Display name in Agent Engine |
 
-To trigger a deployment: **GitHub → Actions → Deploy to Vertex AI Agent Engine → Run workflow**.
+See [SECURITY.md](SECURITY.md) for the full Workload Identity Federation setup walkthrough (run it once per environment/GCP project).
+
+#### Adding More Environments
+
+The workflow is designed to be extended. To add a new environment (e.g. `STAGING`):
+
+1. **Create the GitHub Environment** — Settings → Environments → New environment → `STAGING`
+2. **Add its secrets and variables** (same keys as above, pointing to the STAGING GCP project)
+3. **Add the branch pattern** to the `on.pull_request.branches` list in `deploy.yml`:
+   ```yaml
+   branches:
+     - main
+     - 'dev/**'
+     - 'staging/**'   # ← add this
+   ```
+4. **Add the branch → environment mapping** in the `resolve-environment` job:
+   ```yaml
+   elif echo "$BASE_BRANCH" | grep -q "^staging/"; then
+     echo "environment=STAGING" >> "$GITHUB_OUTPUT"
+   ```
+
+That's it — no other changes needed.
 
 ### Manual Deployment
 

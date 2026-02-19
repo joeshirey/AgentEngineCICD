@@ -1,17 +1,56 @@
 name: Deploy to Vertex AI Agent Engine
 
+# Triggers on a merged PR into main (→ PROD) or any dev/* branch (→ DEV).
+# Any other branch is ignored.
 on:
-  workflow_dispatch:
-    inputs:
-      display_name:
-        description: 'Display name for the agent in Agent Engine'
-        required: false
-        default: ''
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - 'dev/**'
 
 jobs:
-  deploy:
-    name: Deploy Agent
+  # ─────────────────────────────────────────────────────────────────────────
+  # Resolve which GitHub Environment (and therefore which secrets/variables)
+  # to target based on the PR's base branch.
+  # ─────────────────────────────────────────────────────────────────────────
+  resolve-environment:
+    name: Resolve Target Environment
     runs-on: ubuntu-latest
+    # Only proceed for merged PRs — ignore PRs that were simply closed/declined.
+    if: github.event.pull_request.merged == true
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      display_name: ${{ steps.set-env.outputs.display_name }}
+
+    steps:
+      - name: Determine environment from base branch
+        id: set-env
+        run: |
+          BASE_BRANCH="${{ github.base_ref }}"
+          if [ "$BASE_BRANCH" = "main" ]; then
+            echo "environment=PROD" >> "$GITHUB_OUTPUT"
+            echo "display_name=Production" >> "$GITHUB_OUTPUT"
+          elif echo "$BASE_BRANCH" | grep -q "^dev/"; then
+            echo "environment=DEV" >> "$GITHUB_OUTPUT"
+            echo "display_name=$BASE_BRANCH" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported base branch: $BASE_BRANCH"
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Deploy the agent using the secrets and variables from the resolved
+  # GitHub Environment. Adding a new environment is as simple as:
+  #   1. Creating it in GitHub (Settings → Environments)
+  #   2. Adding a new branch pattern to the `on.pull_request.branches` list
+  #   3. Adding the corresponding mapping in the resolve-environment job above
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy Agent (${{ needs.resolve-environment.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: resolve-environment
+    environment: ${{ needs.resolve-environment.outputs.environment }}
 
     permissions:
       contents: read
@@ -22,6 +61,8 @@ jobs:
         uses: actions/checkout@v4
 
       # Authenticate to Google Cloud using Workload Identity Federation (keyless).
+      # Each GitHub Environment has its own GCP_WORKLOAD_IDENTITY_PROVIDER and
+      # GCP_SERVICE_ACCOUNT secrets, enabling per-environment GCP isolation.
       # See SECURITY.md for setup instructions.
       - name: Authenticate to Google Cloud
         id: auth
@@ -39,20 +80,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Resolve agent display name
-        id: resolve_name
-        run: |
-          # Use the workflow input if provided, otherwise fall back to the variable
-          DISPLAY_NAME="${{ github.event.inputs.display_name }}"
-          if [ -z "$DISPLAY_NAME" ]; then
-            DISPLAY_NAME="${{ vars.AGENT_DISPLAY_NAME }}"
-          fi
-          echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
-
       - name: Deploy agent to Agent Engine
         run: |
           adk deploy agent_engine \
             --project="${{ vars.GCP_PROJECT_ID }}" \
             --region="${{ vars.GCP_REGION }}" \
-            --display_name="${{ steps.resolve_name.outputs.display_name }}" \
+            --display_name="${{ needs.resolve-environment.outputs.display_name }}" \
             my_agent
