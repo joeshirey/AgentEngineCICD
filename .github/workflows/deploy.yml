@@ -22,6 +22,10 @@ on:
       - 'dev/**'   # → DEV
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
   # Resolve which GitHub Environment (and therefore which secrets/variables)
