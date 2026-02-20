@@ -40,6 +40,7 @@ jobs:
       - name: Determine environment and display name
         id: set-env
         run: |
+          SKIP_DEPLOY="false"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Manual run: use the selected input directly
             ENV="${{ github.event.inputs.environment }}"
@@ -58,12 +59,13 @@ jobs:
               ENV="DEV"
               DISPLAY_NAME="$BASE_BRANCH"
             else
-              echo "Unsupported base branch: $BASE_BRANCH"
-              exit 1
+              echo "Unsupported base branch: $BASE_BRANCH. Skipping deployment."
+              SKIP_DEPLOY="true"
             fi
           fi
           echo "environment=$ENV" >> "$GITHUB_OUTPUT"
           echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
+          echo "skip_deploy=$SKIP_DEPLOY" >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────
   # Deploy the agent using the secrets and variables from the resolved
@@ -76,6 +78,7 @@ jobs:
     name: Deploy Agent (${{ needs.resolve-environment.outputs.environment }})
     runs-on: ubuntu-latest
     needs: resolve-environment
+    if: needs.resolve-environment.outputs.skip_deploy != 'true'
     environment: ${{ needs.resolve-environment.outputs.environment }}
 
     permissions:
@@ -106,10 +109,45 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Get existing Agent Engine ID by Display Name
+        id: get-agent-id
+        run: |
+          ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          DISPLAY_NAME="${{ needs.resolve-environment.outputs.display_name }}"
+          PROJECT_ID="${{ vars.GCP_PROJECT_ID }}"
+          REGION="${{ vars.GCP_REGION }}"
+          
+          echo "Searching for existing reasoning engine with display name: $DISPLAY_NAME"
+          # Query the Vertex AI REST API to list reasoning engines and filter by display name
+          RESPONSE=$(curl -s -X GET \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines?filter=display_name%3D%22$DISPLAY_NAME%22")
+          
+          # Extract the resource name of the first match, if any
+          AGENT_ID=$(echo "$RESPONSE" | jq -r '.reasoningEngines[0].name // empty')
+          
+          if [ -n "$AGENT_ID" ]; then
+            echo "Found existing agent: $AGENT_ID"
+            echo "EXISTING_AGENT_ID=$AGENT_ID" >> "$GITHUB_ENV"
+          else
+            echo "No existing agent found. A new one will be created."
+          fi
+
       - name: Deploy agent to Agent Engine
         run: |
-          adk deploy agent_engine \
-            --project="${{ vars.GCP_PROJECT_ID }}" \
-            --region="${{ vars.GCP_REGION }}" \
-            --display_name="${{ needs.resolve-environment.outputs.display_name }}" \
-            my_agent
+          if [ -n "${EXISTING_AGENT_ID}" ]; then
+            echo "Replacing existing Agent Engine deployment: $EXISTING_AGENT_ID"
+            adk deploy agent_engine \
+              --project="${{ vars.GCP_PROJECT_ID }}" \
+              --region="${{ vars.GCP_REGION }}" \
+              --display_name="${{ needs.resolve-environment.outputs.display_name }}" \
+              --agent_engine_id="$EXISTING_AGENT_ID" \
+              my_agent
+          else
+            echo "Creating a new Agent Engine deployment"
+            adk deploy agent_engine \
+              --project="${{ vars.GCP_PROJECT_ID }}" \
+              --region="${{ vars.GCP_REGION }}" \
+              --display_name="${{ needs.resolve-environment.outputs.display_name }}" \
+              my_agent
+          fi
