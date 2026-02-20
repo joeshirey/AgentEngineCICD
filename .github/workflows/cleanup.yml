@@ -48,19 +48,38 @@ jobs:
             exit 0
           fi
           
-          echo "Found reasoning engine: $AGENT_ID. Deleting..."
+          echo "Found reasoning engine: $AGENT_ID."
           
-          # Delete the reasoning engine
-          DELETE_RESPONSE=$(curl -s -X DELETE \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://$REGION-aiplatform.googleapis.com/v1beta1/$AGENT_ID")
+          # Max duration 10 minutes, retry every 2 minutes
+          MAX_RETRIES=5
+          RETRY_INTERVAL=120
           
-          # The delete response for a long-running operation usually contains an operation name
-          OPERATION_NAME=$(echo "$DELETE_RESPONSE" | jq -r '.name // empty')
-          
-          if [ -n "$OPERATION_NAME" ]; then
-            echo "Deletion started. Operation: $OPERATION_NAME"
-          else
-            echo "Failed to start deletion or engine already being deleted."
-            echo "Response: $DELETE_RESPONSE"
-          fi
+          for (( attempt=1; attempt<=MAX_RETRIES; attempt++ )); do
+            echo "Deletion attempt $attempt of $MAX_RETRIES..."
+            
+            # Delete the reasoning engine
+            DELETE_RESPONSE=$(curl -s -X DELETE \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              "https://$REGION-aiplatform.googleapis.com/v1beta1/$AGENT_ID?force=true")
+            
+            # Check for success (operation name) or common errors
+            OPERATION_NAME=$(echo "$DELETE_RESPONSE" | jq -r '.name // empty')
+            ERROR_STATUS=$(echo "$DELETE_RESPONSE" | jq -r '.error.status // empty')
+            
+            if [ -n "$OPERATION_NAME" ]; then
+              echo "Deletion started successfully. Operation: $OPERATION_NAME"
+              exit 0
+            elif [ "$ERROR_STATUS" == "FAILED_PRECONDITION" ]; then
+              echo "Deletion blocked by other operations. Retrying in $((RETRY_INTERVAL / 60)) minutes..."
+              if [ $attempt -lt $MAX_RETRIES ]; then
+                sleep $RETRY_INTERVAL
+              else
+                echo "Failed to delete reasoning engine after $MAX_RETRIES attempts due to concurrent operations."
+                exit 1
+              fi
+            else
+              echo "Failed to delete reasoning engine with unexpected error."
+              echo "Response: $DELETE_RESPONSE"
+              exit 1
+            fi
+          done
