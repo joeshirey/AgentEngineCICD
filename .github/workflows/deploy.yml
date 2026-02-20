@@ -1,4 +1,11 @@
 name: Deploy to Vertex AI Agent Engine
+run-name: >-
+  ${{
+    github.event.created && format('Initial Deploy message for the creation of a new branch of {0}', github.ref_name) ||
+    github.event_name == 'pull_request' && github.event.pull_request.title ||
+    github.event_name == 'workflow_dispatch' && format('Manual Deploy of {0}', github.ref_name) ||
+    github.event.head_commit.message
+  }}
 
 # NOTE: PR trigger is temporarily commented out during testing.
 #       Uncomment pull_request and remove workflow_dispatch when ready for production.
