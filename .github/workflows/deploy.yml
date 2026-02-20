@@ -46,7 +46,11 @@ jobs:
             if [ "$ENV" = "PROD" ]; then
               DISPLAY_NAME="Production"
             else
-              DISPLAY_NAME="$ENV"
+              if echo "${{ github.ref_name }}" | grep -q "^dev/"; then
+                DISPLAY_NAME="${{ github.ref_name }}"
+              else
+                DISPLAY_NAME="$ENV"
+              fi
             fi
           else
             # PR merge: derive from the base branch
@@ -117,10 +121,14 @@ jobs:
           REGION="${{ vars.GCP_REGION }}"
           
           echo "Searching for existing reasoning engine with display name: $DISPLAY_NAME"
+          
+          # URL-encode the display name (important for names like dev/pirate)
+          ENCODED_DISPLAY_NAME=$(jq -rn --arg x "$DISPLAY_NAME" '$x|@uri')
+          
           # Query the Vertex AI REST API to list reasoning engines and filter by display name
           RESPONSE=$(curl -s -X GET \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines?filter=display_name%3D%22$DISPLAY_NAME%22")
+            "https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines?filter=display_name%3D%22$ENCODED_DISPLAY_NAME%22")
           
           # Extract the resource name of the first match, if any
           AGENT_ID=$(echo "$RESPONSE" | jq -r '.reasoningEngines[0].name // empty')
