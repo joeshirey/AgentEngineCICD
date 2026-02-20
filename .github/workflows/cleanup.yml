@@ -1,4 +1,5 @@
 name: Cleanup Agent Engine on Branch Deletion
+run-name: Cleanup deleted branch for ${{ github.event.ref }}
 
 on:
   delete:
