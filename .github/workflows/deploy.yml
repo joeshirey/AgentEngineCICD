@@ -1,13 +1,26 @@
 name: Deploy to Vertex AI Agent Engine
 
-# Triggers on a merged PR into main (→ PROD) or any dev/* branch (→ DEV).
-# Any other branch is ignored.
+# NOTE: PR trigger is temporarily commented out during testing.
+#       Uncomment pull_request and remove workflow_dispatch when ready for production.
+#
+# Production trigger — uncomment when testing is complete:
+# on:
+#   pull_request:
+#     types: [closed]
+#     branches:
+#       - main       # → PROD
+#       - 'dev/**'   # → DEV
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - main
-      - 'dev/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'DEV'
+        type: choice
+        options:
+          - DEV
+          - PROD
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
@@ -17,27 +30,40 @@ jobs:
   resolve-environment:
     name: Resolve Target Environment
     runs-on: ubuntu-latest
-    # Only proceed for merged PRs — ignore PRs that were simply closed/declined.
-    if: github.event.pull_request.merged == true
+    # Allow both manual dispatch and merged PRs (PR trigger currently commented out).
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     outputs:
       environment: ${{ steps.set-env.outputs.environment }}
       display_name: ${{ steps.set-env.outputs.display_name }}
 
     steps:
-      - name: Determine environment from base branch
+      - name: Determine environment and display name
         id: set-env
         run: |
-          BASE_BRANCH="${{ github.base_ref }}"
-          if [ "$BASE_BRANCH" = "main" ]; then
-            echo "environment=PROD" >> "$GITHUB_OUTPUT"
-            echo "display_name=Production" >> "$GITHUB_OUTPUT"
-          elif echo "$BASE_BRANCH" | grep -q "^dev/"; then
-            echo "environment=DEV" >> "$GITHUB_OUTPUT"
-            echo "display_name=$BASE_BRANCH" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual run: use the selected input directly
+            ENV="${{ github.event.inputs.environment }}"
+            if [ "$ENV" = "PROD" ]; then
+              DISPLAY_NAME="Production"
+            else
+              DISPLAY_NAME="$ENV"
+            fi
           else
-            echo "Unsupported base branch: $BASE_BRANCH"
-            exit 1
+            # PR merge: derive from the base branch
+            BASE_BRANCH="${{ github.base_ref }}"
+            if [ "$BASE_BRANCH" = "main" ]; then
+              ENV="PROD"
+              DISPLAY_NAME="Production"
+            elif echo "$BASE_BRANCH" | grep -q "^dev/"; then
+              ENV="DEV"
+              DISPLAY_NAME="$BASE_BRANCH"
+            else
+              echo "Unsupported base branch: $BASE_BRANCH"
+              exit 1
+            fi
           fi
+          echo "environment=$ENV" >> "$GITHUB_OUTPUT"
+          echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────
   # Deploy the agent using the secrets and variables from the resolved

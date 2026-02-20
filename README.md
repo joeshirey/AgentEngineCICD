@@ -91,7 +91,8 @@ Each environment needs the following secrets and variables:
 | Secret | `GCP_SERVICE_ACCOUNT` | Service account email for this environment |
 | Variable | `GCP_PROJECT_ID` | GCP project ID for this environment |
 | Variable | `GCP_REGION` | Deployment region (e.g. `us-central1`) |
-| Variable | `AGENT_DISPLAY_NAME` | Display name in Agent Engine |
+
+> **Display name** is set automatically — `"Production"` for `main`, or the branch name (e.g. `dev/my-feature`) for all other branches. No variable needed.
 
 See [SECURITY.md](SECURITY.md) for the full Workload Identity Federation setup walkthrough (run it once per environment/GCP project).
 

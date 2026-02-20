@@ -151,13 +151,14 @@ Go to your GitHub repository → **Settings → Secrets and variables → Action
 |------|--------------|-------------|
 | `GCP_PROJECT_ID` | `my-project-123` | GCP project ID |
 | `GCP_REGION` | `us-central1` | Agent Engine deployment region ([supported regions](https://cloud.google.com/agent-builder/docs/locations#supported-regions-agent-engine)) |
-| `AGENT_DISPLAY_NAME` | `My Agent` | Display name in Agent Engine console |
+
+> **Display name** is set automatically by the workflow — `"Production"` for `main`, or the branch name for all other environments. No variable needed.
 
 ---
 
 ## Verification
 
-After completing setup, trigger the workflow manually from **GitHub → Actions → Deploy to Vertex AI Agent Engine → Run workflow**.
+After completing setup, trigger the workflow by merging a pull request into `main` (deploys to PROD) or a `dev/**` branch (deploys to DEV).
 
 If authentication fails, the most common causes are:
 - The `--attribute-condition` in Step 3 doesn't match your actual `REPO_OWNER/REPO_NAME`
