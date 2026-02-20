@@ -10,20 +10,11 @@ on:
       - main       # → PROD
       - 'dev/**'   # → DEV
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Target environment'
-        required: true
-        default: 'DEV'
-        type: choice
-        options:
-          - DEV
-          - PROD
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
   # Resolve which GitHub Environment (and therefore which secrets/variables)
-  # to target based on the PR's base branch.
+  # to target based on the branch name.
   # ─────────────────────────────────────────────────────────────────────────
   resolve-environment:
     name: Resolve Target Environment
@@ -39,33 +30,41 @@ jobs:
       - name: Determine environment and display name
         id: set-env
         run: |
-          SKIP_DEPLOY="false"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual run: use the selected input directly
-            ENV="${{ github.event.inputs.environment }}"
-            if [ "$ENV" = "PROD" ]; then
-              DISPLAY_NAME="Production"
-            else
-              if echo "${{ github.ref_name }}" | grep -q "^dev/"; then
-                DISPLAY_NAME="${{ github.ref_name }}"
-              else
-                DISPLAY_NAME="$ENV"
-              fi
-            fi
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref Name: ${{ github.ref_name }}"
+          echo "Base Ref: ${{ github.base_ref }}"
+          
+          # Determine the target branch for evaluation
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            TARGET_BRANCH="${{ github.base_ref }}"
+            echo "Processing Pull Request trigger targeting: $TARGET_BRANCH"
           else
-            # PR merge: derive from the base branch
-            BASE_BRANCH="${{ github.base_ref }}"
-            if [ "$BASE_BRANCH" = "main" ]; then
-              ENV="PROD"
-              DISPLAY_NAME="Production"
-            elif echo "$BASE_BRANCH" | grep -q "^dev/"; then
-              ENV="DEV"
-              DISPLAY_NAME="$BASE_BRANCH"
-            else
-              echo "Unsupported base branch: $BASE_BRANCH. Skipping deployment."
-              SKIP_DEPLOY="true"
-            fi
+            TARGET_BRANCH="${{ github.ref_name }}"
+            echo "Processing manual trigger (workflow_dispatch) from: $TARGET_BRANCH"
           fi
+
+          SKIP_DEPLOY="false"
+          if [ "$TARGET_BRANCH" = "main" ]; then
+            echo "Target branch is main. Setting target to PROD / Production."
+            ENV="PROD"
+            DISPLAY_NAME="Production"
+          elif echo "$TARGET_BRANCH" | grep -q "^dev/"; then
+            echo "Target branch $TARGET_BRANCH starts with 'dev/'. Setting target to DEV / $TARGET_BRANCH."
+            ENV="DEV"
+            DISPLAY_NAME="$TARGET_BRANCH"
+          else
+            echo "Unsupported target branch: $TARGET_BRANCH. Skipping deployment."
+            SKIP_DEPLOY="true"
+            ENV="NONE"
+            DISPLAY_NAME="NONE"
+          fi
+          
+          echo "Final Resolved Values:"
+          echo "  Environment: $ENV"
+          echo "  Display Name: $DISPLAY_NAME"
+          echo "  Skip Deploy: $SKIP_DEPLOY"
+          
           echo "environment=$ENV" >> "$GITHUB_OUTPUT"
           echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
           echo "skip_deploy=$SKIP_DEPLOY" >> "$GITHUB_OUTPUT"
