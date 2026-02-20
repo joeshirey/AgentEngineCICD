@@ -4,13 +4,11 @@ name: Deploy to Vertex AI Agent Engine
 #       Uncomment pull_request and remove workflow_dispatch when ready for production.
 #
 # Production trigger — uncomment when testing is complete:
-# on:
-#   pull_request:
-#     types: [closed]
-#     branches:
-#       - main       # → PROD
-#       - 'dev/**'   # → DEV
 on:
+  pull_request:
+    branches:
+      - main       # → PROD
+      - 'dev/**'   # → DEV
   workflow_dispatch:
     inputs:
       environment:
@@ -30,11 +28,12 @@ jobs:
   resolve-environment:
     name: Resolve Target Environment
     runs-on: ubuntu-latest
-    # Allow both manual dispatch and merged PRs (PR trigger currently commented out).
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    # Allow both manual dispatch and PRs.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     outputs:
       environment: ${{ steps.set-env.outputs.environment }}
       display_name: ${{ steps.set-env.outputs.display_name }}
+      skip_deploy: ${{ steps.set-env.outputs.skip_deploy }}
 
     steps:
       - name: Determine environment and display name
