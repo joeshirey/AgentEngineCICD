@@ -23,8 +23,8 @@ jobs:
   resolve-environment:
     name: Resolve Target Environment
     runs-on: ubuntu-latest
-    # Allow both manual dispatch and PRs.
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    # Allow manual dispatch, PRs, and direct pushes/merges.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.event_name == 'push'
     outputs:
       environment: ${{ steps.set-env.outputs.environment }}
       display_name: ${{ steps.set-env.outputs.display_name }}
