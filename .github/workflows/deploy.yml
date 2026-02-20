@@ -37,7 +37,8 @@ jobs:
           
           # Determine the target branch for evaluation
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            TARGET_BRANCH="${{ github.base_ref }}"
+            #TARGET_BRANCH="${{ github.base_ref }}"
+            TARGET_BRANCH="${{ github.ref_name }}"
             echo "Processing Pull Request trigger targeting: $TARGET_BRANCH"
           else
             TARGET_BRANCH="${{ github.ref_name }}"
