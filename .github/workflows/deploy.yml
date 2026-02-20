@@ -14,16 +14,15 @@ run-name: >-
 on:
   pull_request:
     branches:
-      - main       # → PROD
-      - 'dev/**'   # → DEV
+      - main       # → Show plan/resolve environment for PROD PRs, but don't deploy yet.
   push:
     branches:
-      - main       # → PROD
-      - 'dev/**'   # → DEV
+      - main       # → Final deploy to PROD (after PR merge).
+      - 'dev/**'   # → Continuous deploy to DEV.
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.base_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -98,7 +97,9 @@ jobs:
     name: Deploy Agent (${{ needs.resolve-environment.outputs.environment }})
     runs-on: ubuntu-latest
     needs: resolve-environment
-    if: needs.resolve-environment.outputs.skip_deploy != 'true'
+    # Skip deployment for Pull Requests (they only run 'resolve-environment' for verification).
+    # Deploy only on Push (merges) or manual Workflow Dispatch.
+    if: needs.resolve-environment.outputs.skip_deploy != 'true' && github.event_name != 'pull_request'
     environment: ${{ needs.resolve-environment.outputs.environment }}
 
     permissions:
