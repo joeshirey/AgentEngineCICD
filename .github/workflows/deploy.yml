@@ -41,12 +41,14 @@ jobs:
           
           # Determine the target branch for evaluation
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            #TARGET_BRANCH="${{ github.base_ref }}"
+            TARGET_BRANCH="${{ github.base_ref }}"
+            echo "Processing Pull Request trigger (targeting $TARGET_BRANCH)"
+          elif [ "${{ github.event_name }}" = "push" ]; then
             TARGET_BRANCH="${{ github.ref_name }}"
-            echo "Processing Pull Request trigger targeting: $TARGET_BRANCH"
+            echo "Processing Push trigger (on $TARGET_BRANCH)"
           else
             TARGET_BRANCH="${{ github.ref_name }}"
-            echo "Processing manual trigger (workflow_dispatch) from: $TARGET_BRANCH"
+            echo "Processing manual trigger (on $TARGET_BRANCH)"
           fi
 
           SKIP_DEPLOY="false"
