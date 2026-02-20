@@ -1,0 +1,66 @@
+name: Cleanup Agent Engine on Branch Deletion
+
+on:
+  delete:
+
+jobs:
+  cleanup:
+    name: Delete Agent (${{ github.event.ref }})
+    # Only run if a branch starting with 'dev/' was deleted
+    if: github.event.ref_type == 'branch' && startsWith(github.event.ref, 'dev/')
+    runs-on: ubuntu-latest
+    environment: DEV
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Search and Delete Reasoning Engine
+        run: |
+          ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          DISPLAY_NAME="${{ github.event.ref }}"
+          PROJECT_ID="${{ vars.GCP_PROJECT_ID }}"
+          REGION="${{ vars.GCP_REGION }}"
+          
+          echo "Searching for reasoning engine with display name: $DISPLAY_NAME"
+          
+          # URL-encode the display name
+          ENCODED_DISPLAY_NAME=$(jq -rn --arg x "$DISPLAY_NAME" '$x|@uri')
+          
+          # Query the Vertex AI REST API to list reasoning engines and filter by display name
+          RESPONSE=$(curl -s -X GET \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines?filter=display_name%3D%22$ENCODED_DISPLAY_NAME%22")
+          
+          # Extract the resource name of the first match, if any
+          AGENT_ID=$(echo "$RESPONSE" | jq -r '.reasoningEngines[0].name // empty')
+          
+          if [ -z "$AGENT_ID" ]; then
+            echo "No matching reasoning engine found for display name: $DISPLAY_NAME"
+            exit 0
+          fi
+          
+          echo "Found reasoning engine: $AGENT_ID. Deleting..."
+          
+          # Delete the reasoning engine
+          DELETE_RESPONSE=$(curl -s -X DELETE \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://$REGION-aiplatform.googleapis.com/v1beta1/$AGENT_ID")
+          
+          # The delete response for a long-running operation usually contains an operation name
+          OPERATION_NAME=$(echo "$DELETE_RESPONSE" | jq -r '.name // empty')
+          
+          if [ -n "$OPERATION_NAME" ]; then
+            echo "Deletion started. Operation: $OPERATION_NAME"
+          else
+            echo "Failed to start deletion or engine already being deleted."
+            echo "Response: $DELETE_RESPONSE"
+          fi
