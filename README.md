@@ -15,7 +15,8 @@ AgentEngineCICD/
 ├── requirements.txt      # Python dependencies
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml    # CI/CD workflow
+│       ├── deploy.yml    # CI/CD deployment workflow
+│       └── cleanup.yml   # Automatic branch cleanup workflow
 └── SECURITY.md           # Workload Identity Federation setup guide
 ```
 
@@ -62,22 +63,23 @@ The ADK web UI will be available at `http://localhost:8000`.
 
 ### Automated (GitHub Actions)
 
-The `Deploy to Vertex AI Agent Engine` workflow (`.github/workflows/deploy.yml`) automatically deploys the agent when a **pull request is merged**. The target environment is resolved from the PR's base branch:
+This project uses two workflows to manage the lifecycle of your agents:
 
-| Base branch | GitHub Environment | GCP target |
-|-------------|-------------------|------------|
-| `main` | `PROD` | Production project/region |
-| `dev/**` | `DEV` | Development project/region |
+1. **Deploy Workflow** (`deploy.yml`): Handles deployments to DEV and PROD.
+2. **Cleanup Workflow** (`cleanup.yml`): Automatically deletes Agent Engine resources when branches are removed.
 
-The workflow is ignored for all other branches.
+#### Deployment Strategy
+
+| Environment | Trigger | Target Branch | Notes |
+|-------------|---------|---------------|-------|
+| **DEV** | `push` | `dev/**` | Continuous deployment on every push to your feature branch. |
+| **PROD** | `merge` | `main` | Triggered automatically when a Pull Request is merged into `main`. |
 
 #### How It Works
 
-1. A PR is opened targeting `main` or a `dev/*` branch
-2. When the PR is **merged** (not just closed), the workflow triggers
-3. The `resolve-environment` job maps the base branch to a GitHub Environment
-4. The `deploy` job runs within that environment, pulling its own secrets and variables
-5. `adk deploy agent_engine` packages and deploys the agent to the correct GCP project
+- **Development**: Every code push to a `dev/` branch triggers an immediate deployment. Duplicate runs are automatically deduplicated via concurrency groups.
+- **Production**: A Pull Request to `main` will trigger a resolution check (to show what will happen), but the actual deployment is gated until the PR is merged.
+- **Deduplication**: We use GitHub Concurrency Groups to ensure that if multiple pushes happen rapidly, only the latest one completes, saving time and resources.
 
 #### GitHub Environments Setup
 
@@ -91,6 +93,7 @@ Each environment needs the following secrets and variables:
 | Secret | `GCP_SERVICE_ACCOUNT` | Service account email for this environment |
 | Variable | `GCP_PROJECT_ID` | GCP project ID for this environment |
 | Variable | `GCP_REGION` | Deployment region (e.g. `us-central1`) |
+| Variable | `AGENT_SOURCE_PATH` | Optional. Path to the agent directory (defaults to `my_agent`) |
 
 > **Display name** is set automatically — `"Production"` for `main`, or the branch name (e.g. `dev/my-feature`) for all other branches. No variable needed.
 
@@ -116,6 +119,13 @@ The workflow is designed to be extended. To add a new environment (e.g. `STAGING
    ```
 
 That's it — no other changes needed.
+
+### Automatic Cleanup
+
+When you delete a branch prefixed with `dev/` in GitHub, the `Cleanup` workflow automatically:
+1.  Identifies the associated reasoning engine in Vertex AI.
+2.  Issues a `DELETE` request (with `force=true`) to clean up the engine and any active sessions.
+3.  Handles concurrent operations with a 10-minute retry loop.
 
 ### Manual Deployment
 
