@@ -114,7 +114,7 @@ The workflow is designed to be extended. To add a new environment (e.g. `STAGING
    ```
 4. **Add the branch → environment mapping** in the `resolve-environment` job:
    ```yaml
-   elif echo "$BASE_BRANCH" | grep -q "^staging/"; then
+   elif echo "$TARGET_BRANCH" | grep -q "^staging/"; then
      echo "environment=STAGING" >> "$GITHUB_OUTPUT"
    ```
 
