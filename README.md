@@ -2,6 +2,9 @@
 
 A minimal Google ADK agent with a CI/CD GitHub Actions workflow for deploying to [Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview).
 
+> [!TIP]
+> **New to this repository?** Start with the [Comprehensive Walkthrough](WALKTHROUGH.md) for a deep dive into the architecture, naming conventions, and scaling strategies used in this example.
+
 ---
 
 ## Project Structure
@@ -17,7 +20,9 @@ AgentEngineCICD/
 │   └── workflows/
 │       ├── deploy.yml    # CI/CD deployment workflow
 │       └── cleanup.yml   # Automatic branch cleanup workflow
-└── SECURITY.md           # Workload Identity Federation setup guide
+├── SECURITY.md           # Workload Identity Federation setup guide
+├── WALKTHROUGH.md        # Architectural guide & CI/CD walkthrough
+└── LICENSE               # Repository license
 ```
 
 ---

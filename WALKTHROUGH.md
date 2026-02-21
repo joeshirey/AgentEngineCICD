@@ -72,6 +72,9 @@ To ensure we don't create duplicate agents for every push, the workflow first qu
 - If an agent with the matching **Display Name** exists, we capture its ID and perform an **Update**.
 - If no matching agent is found, we perform a **New Deployment**.
 
+#### Customizing Source Directory (`AGENT_SOURCE_PATH`)
+By default, the workflow looks for code in the `my_agent` folder. If you want to use a different folder, simply set the `AGENT_SOURCE_PATH` GitHub Variable. The workflow will dynamically use it, or fall back to `my_agent` if not set.
+
 ### 🛡️ Concurrency & Deduplication
 
 We use GitHub's `concurrency` feature to ensure that if a developer pushes code twice in 30 seconds, the first (now stale) deployment is automatically canceled. This saves GCP costs and CI minutes.
@@ -101,16 +104,29 @@ if: github.event.ref_type == 'branch' && startsWith(github.event.ref, 'dev/')
 
 ## 🛠️ Customizing and Scaling
 
+### Understanding Environment & Naming Conventions
+
+This repository uses a specific set of naming conventions to organize deployments. It is important to remember that **these are highly configurable defaults** chosen to demonstrate a multi-environment setup.
+
+| Git Branch | Target Environment | Agent Display Name | Use Case |
+|------------|--------------------|--------------------|----------|
+| `main` | `PROD` | `Production` | Stable, customer-facing agent. |
+| `dev/**` | `DEV` | `dev/branch-name` | Ephemeral sandbox for feature testing. |
+
+#### Why these names?
+- **Friendly Labels**: We use "Production" for the main branch instead of `main` to provide a clearer, more professional label for the primary resource in the Google Cloud Console.
+- **Traceability**: For development branches, we use the branch name itself as the display name. This makes it instantly obvious which deployed agent corresponds to which piece of work in progress.
+
 ### Changing Naming Conventions
 
-By default, we use the branch name (e.g., `dev/pirate`) as the Agent Engine **Display Name**. You can change this in `deploy.yml` inside the `resolve-environment` job.
+If your team uses different terms (e.g., `test`, `sandbox`, `v1`), you can easily modify these in `deploy.yml` inside the `resolve-environment` job.
 
-**Example: Adding a Repo Prefix**
+**Example: Customizing the Sandbox Label**
 ```bash
 # Change:
 DISPLAY_NAME="$TARGET_BRANCH"
 # To:
-DISPLAY_NAME="my-project-${TARGET_BRANCH////-}"
+DISPLAY_NAME="user-sandbox-${TARGET_BRANCH////-}"
 ```
 
 ### Scaling to More Environments (QA, Staging)

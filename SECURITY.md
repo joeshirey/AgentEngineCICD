@@ -151,6 +151,7 @@ Go to your GitHub repository → **Settings → Secrets and variables → Action
 |------|--------------|-------------|
 | `GCP_PROJECT_ID` | `my-project-123` | GCP project ID |
 | `GCP_REGION` | `us-central1` | Agent Engine deployment region ([supported regions](https://cloud.google.com/agent-builder/docs/locations#supported-regions-agent-engine)) |
+| `AGENT_SOURCE_PATH` | `my_agent` | Optional. Path to the agent directory (defaults to `my_agent`) |
 
 > **Display name** is set automatically by the workflow — `"Production"` for `main`, or the branch name for all other environments. No variable needed.
 
