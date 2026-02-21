@@ -1,20 +1,39 @@
 name: Cleanup Agent Engine on Branch Deletion
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RUN NAME LOGIC
+# Dynamically sets the run title to show which branch is being cleaned up.
+# ─────────────────────────────────────────────────────────────────────────────
 run-name: Cleanup deleted branch for ${{ github.event.ref }}
 
 on:
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE 'DELETE' EVENT
+  # This event triggers when a branch or tag is deleted.
+  # Note: The context available for 'delete' events is more limited than 'push' 
+  # or 'pull_request'. For example, you cannot use 'actions/checkout' if the 
+  # branch is already gone!
+  # ───────────────────────────────────────────────────────────────────────────
   delete:
 
 jobs:
   cleanup:
     name: Delete Agent (${{ github.event.ref }})
-    # Only run if a branch starting with 'dev/' was deleted
+    
+    # SAFETY GATES:
+    # 1. Only run if a BRANCH was deleted (not a tag).
+    # 2. Only run if the branch starts with 'dev/'. We don't want to accidentally 
+    #    delete production or main resources if they were somehow deleted.
     if: github.event.ref_type == 'branch' && startsWith(github.event.ref, 'dev/')
+    
     runs-on: ubuntu-latest
+    
+    # We target the DEV environment to retrieve its specific GCP credentials.
     environment: DEV
     
     permissions:
       contents: read
-      id-token: write
+      id-token: write  # MANDATORY for Workload Identity Federation
 
     steps:
       - name: Authenticate to Google Cloud
@@ -24,6 +43,12 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      # ───────────────────────────────────────────────────────────────────────
+      # STEP: SEARCH AND DELETE REASONING ENGINE
+      # Since the branch is deleted, we can't use the ADK CLI easily without 
+      # the agent source code. Instead, we use the Vertex AI REST API.
+      # This demonstrates how to interact with GCP resources directly via API.
+      # ───────────────────────────────────────────────────────────────────────
       - name: Search and Delete Reasoning Engine
         run: |
           ACCESS_TOKEN="$(gcloud auth print-access-token)"
@@ -31,39 +56,45 @@ jobs:
           PROJECT_ID="${{ vars.GCP_PROJECT_ID }}"
           REGION="${{ vars.GCP_REGION }}"
           
-          echo "Searching for reasoning engine with display name: $DISPLAY_NAME"
+          echo "Processing cleanup for display name: $DISPLAY_NAME"
           
-          # URL-encode the display name
+          # URL-encode the display name so it's safe for the API filter string.
           ENCODED_DISPLAY_NAME=$(jq -rn --arg x "$DISPLAY_NAME" '$x|@uri')
           
-          # Query the Vertex AI REST API to list reasoning engines and filter by display name
+          # 1. LIST: Find the Reasoning Engine that matches this branch name.
           RESPONSE=$(curl -s -X GET \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             "https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines?filter=display_name%3D%22$ENCODED_DISPLAY_NAME%22")
           
-          # Extract the resource name of the first match, if any
           AGENT_ID=$(echo "$RESPONSE" | jq -r '.reasoningEngines[0].name // empty')
           
           if [ -z "$AGENT_ID" ]; then
-            echo "No matching reasoning engine found for display name: $DISPLAY_NAME"
+            echo "No matching reasoning engine found. Nothing to delete."
             exit 0
           fi
           
           echo "Found reasoning engine: $AGENT_ID."
           
-          # Max duration 10 minutes, retry every 2 minutes
+          # ───────────────────────────────────────────────────────────────────
+          # RETRY LOGIC (Handling Concurrent Transitions)
+          # Vertex AI may block deletions if the resource is currently being 
+          # updated or transitioning states. We include a retry loop to handle 
+          # 'FAILED_PRECONDITION' errors gracefully.
+          # ───────────────────────────────────────────────────────────────────
           MAX_RETRIES=5
-          RETRY_INTERVAL=120
+          RETRY_INTERVAL=120 # 2 minutes
           
           for (( attempt=1; attempt<=MAX_RETRIES; attempt++ )); do
             echo "Deletion attempt $attempt of $MAX_RETRIES..."
             
-            # Delete the reasoning engine
+            # 2. DELETE: Issue the deletion request.
+            # force=true: Ensures the engine is deleted even if it has active 
+            # user sessions or child resources.
             DELETE_RESPONSE=$(curl -s -X DELETE \
               -H "Authorization: Bearer $ACCESS_TOKEN" \
               "https://$REGION-aiplatform.googleapis.com/v1beta1/$AGENT_ID?force=true")
             
-            # Check for success (operation name) or common errors
+            # Check for success (API returns an 'Operation' name).
             OPERATION_NAME=$(echo "$DELETE_RESPONSE" | jq -r '.name // empty')
             ERROR_STATUS=$(echo "$DELETE_RESPONSE" | jq -r '.error.status // empty')
             
@@ -75,11 +106,11 @@ jobs:
               if [ $attempt -lt $MAX_RETRIES ]; then
                 sleep $RETRY_INTERVAL
               else
-                echo "Failed to delete reasoning engine after $MAX_RETRIES attempts due to concurrent operations."
+                echo "Failed after maximum retries."
                 exit 1
               fi
             else
-              echo "Failed to delete reasoning engine with unexpected error."
+              echo "Failed with unexpected error: $ERROR_STATUS"
               echo "Response: $DELETE_RESPONSE"
               exit 1
             fi
