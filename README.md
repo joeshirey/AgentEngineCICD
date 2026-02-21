@@ -93,6 +93,7 @@ Each environment needs the following secrets and variables:
 | Secret | `GCP_SERVICE_ACCOUNT` | Service account email for this environment |
 | Variable | `GCP_PROJECT_ID` | GCP project ID for this environment |
 | Variable | `GCP_REGION` | Deployment region (e.g. `us-central1`) |
+| Variable | `AGENT_SOURCE_PATH` | Optional. Path to the agent directory (defaults to `my_agent`) |
 
 > **Display name** is set automatically — `"Production"` for `main`, or the branch name (e.g. `dev/my-feature`) for all other branches. No variable needed.
 
